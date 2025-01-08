@@ -1,1 +1,1 @@
-# proofs-and-verification-in-FStar
+# Proofs and verification in F*
