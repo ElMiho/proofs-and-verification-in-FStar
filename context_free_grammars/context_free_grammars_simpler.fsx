@@ -115,6 +115,11 @@ let construction_b (cfg: CFG) =
     let (updated_productions, _) = handle_all_productions_b cfg.productions 0
     { cfg with productions = updated_productions }
 
+let entire_construction (cfg: CFG) = 
+    let cfg' = construction_b (construction_a cfg)
+    let updated_variables = List.map (fun (var, _) -> var) cfg'.productions
+    { cfg' with variables = updated_variables }
+
 // Abstract syntax tree
 type AST = 
     | Node of Variable * AST list

@@ -1,36 +1,44 @@
 module ContextFreeGrammars
+open FStar.String
+open FStar.List
 
 // Helper functions because loading other files does not work
 // FIX
 let rec for_all (#a: Type) (f: a -> bool) (xs: list a)
-  : Tot (bool)(decreases xs)
+  : Tot (bool) (decreases xs)
   = match xs with
     | [] -> true
     | x :: xs' -> f x && for_all f xs'
 
-let rec contains (#a: eqtype) (x: a) (xs: list a)
-  : Tot (bool) (decreases xs)
-  = match xs with
-    | [] -> false 
-    | x' :: xs' -> x = x' || contains x xs'
+// let rec contains (#a: eqtype) (x: a) (xs: list a)
+//   : Tot (bool) (decreases xs)
+//   = match xs with
+//     | [] -> false 
+//     | x' :: xs' -> x = x' || contains x xs'
 
-let rec length (#a: Type) (xs: list a)
-  : Tot (nat) (decreases xs)
-  = match xs with
-    | [] -> 0 
-    | _ :: xs' -> 1 + length xs'
+// let rec length (#a: Type) (xs: list a)
+//   : Tot (nat) (decreases xs)
+//   = match xs with
+//     | [] -> 0 
+//     | _ :: xs' -> 1 + length xs'
 
-let rec append (#a: Type) (xs: list a) (ys: list a)
-  : Tot (list a) (decreases xs)
-  = match xs with
-    | [] -> ys
-    | x :: xs' -> x :: append xs' ys
+// let rec append (#a: Type) (xs: list a) (ys: list a)
+//   : Tot (list a) (decreases xs)
+//   = match xs with
+//     | [] -> ys
+//     | x :: xs' -> x :: append xs' ys
 
 let rec foldBack (#a #b: Type) (f: b -> a -> a) (ls: list b) (acc: a)
   : a
   = match ls with
     | [] -> acc
     | l :: ls' -> foldBack f ls' (f l acc)
+
+let rec map (#a #b: Type) (f: a -> b) (xs: list a)
+  : Tot (list b) (decreases xs)
+  = match xs with
+    | [] -> []
+    | x :: xs' -> f x :: map f xs'
 
 // All the code
 type variable_type = 
@@ -70,12 +78,12 @@ let sound_CFG (cfg: cfg_type)
   // Production rules makes sense
   for_all (
     fun (var, rhs) -> 
-      contains var cfg.variables &&
+      List.contains var cfg.variables &&
       for_all (
         fun exp -> 
           match exp with
-          | V v -> contains v cfg.variables
-          | T t -> contains t cfg.terminals
+          | V v -> List.contains v cfg.variables
+          | T t -> List.contains t cfg.terminals
       ) rhs
   ) cfg.productions
 
@@ -86,7 +94,7 @@ let a_CFG_is_sound_lemma _
 // construction for (a)
 let handle_one_production_a ((var, rhs): production_type) (count: int)
   : list (variable_type * rhs_type) * int
-  = if length rhs >= 2 then 
+  = if List.length rhs >= 2 then 
       let (res', count', new_productions) = foldBack (
         fun p (acc, c, prods) -> 
           match p with
@@ -111,7 +119,7 @@ let rec handle_all_productions_a productions count =
   | (var, rhs) :: productions' -> 
     let (new_productions, count') = handle_one_production_a (var, rhs) count in 
     let (res, count'') = handle_all_productions_a productions' count' in
-    append new_productions res, count''
+    List.append new_productions res, count''
 
 let handle_all_productions_a_test_lemma _ 
   : Lemma (
@@ -152,10 +160,10 @@ let rec handle_all_productions_b (productions: list production_type) (count: int
   = match productions with
     | [] -> [], count
     | (var, rhs) :: productions' -> 
-      if length rhs >= 2 then
+      if List.length rhs >= 2 then
         let (new_productions, count') = handle_one_production_b (var, rhs) count in 
         let (new_productions', count'') = handle_all_productions_b productions' count' in
-        append new_productions new_productions', count''
+        List.append new_productions new_productions', count''
       else 
         let (new_productions', count'') = handle_all_productions_b productions' count in
         (var, rhs) :: new_productions', count''
@@ -166,8 +174,16 @@ let construction_b (cfg: cfg_type)
     let (updated_productions, _) = handle_all_productions_b cfg.productions 0 in
     { cfg with productions = updated_productions }
 
+// Here we also handle the missing variables that came from the two sub constructions
+let entire_construction (cfg: cfg_type)
+  : cfg_type
+  = 
+    let cfg' = construction_b (construction_a cfg) in
+    let updated_variables = map (fun (var, _) -> var) cfg'.productions in 
+    { cfg' with variables = updated_variables }
+
 let (a_CFG_CNF: cfg_type) = {
-  variables = [Var "A"];
+  variables = [Var "A"; Var "A"; Var "C0"; Var "Z0"];
   terminals = [Term "a"; Term "+"];
   productions =
     [(Var "A", [T (Term "a")]); (Var "A", [V (Var "A"); V (Var "C0")]);
@@ -175,9 +191,9 @@ let (a_CFG_CNF: cfg_type) = {
   start = Var "A"
 }
 
-let entire_construction _ 
-  : Lemma (a_CFG_CNF == construction_b (construction_a a_CFG))
-  = normalize_term_spec (construction_b (construction_a a_CFG))
+let entire_construction_lemma _ 
+  : Lemma (a_CFG_CNF == entire_construction a_CFG)
+  = normalize_term_spec (entire_construction a_CFG)
 
 // Abstract syntax tree
 type ast_type = 
@@ -235,13 +251,15 @@ let rec get_production_rhs_from_AST (ast_list: list ast_type)
     | T' term :: ast_list' -> T term :: get_production_rhs_from_AST ast_list'
 
 let rec ast_in_cfg (ast: ast_type) (cfg: cfg_type)
+  : bool
   = match ast with
     | Node (var, ast_list) -> 
       let rhs = get_production_rhs_from_AST ast_list in
-      contains var cfg.variables && contains (var, rhs) cfg.productions &&
+      List.contains var cfg.variables && List.contains (var, rhs) cfg.productions &&
       ast_in_cfg_list ast_list cfg
     | T' t -> true // valid since we use get_production_rhs_from_AST and checks above if it is a production rule
 and ast_in_cfg_list (ast_list: list ast_type) (cfg: cfg_type)
+  : bool
   = match ast_list with
     | [] -> true
     | ast :: ast_list' -> ast_in_cfg ast cfg && ast_in_cfg_list ast_list' cfg
@@ -251,3 +269,10 @@ let aPaPa_in_a_CFG_lemma _
   = normalize_term_spec (ast_in_cfg aPaPa a_CFG)
 
 // Properties
+let no_eps_symbol (cfg: cfg_type)
+  : bool 
+  = not (contains (Term "") cfg.terminals)
+
+let a _ 
+  : Lemma (no_eps_symbol a_CFG == true)
+  = normalize_term_spec (no_eps_symbol a_CFG)
