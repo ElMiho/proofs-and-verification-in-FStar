@@ -136,20 +136,6 @@ let rec sort_ensures_ordered (xs: list int)
       sort_ensures_ordered xOdd;
       merge_ordered_lemma (sort xEven) (sort xOdd)
 
-let rec sort_preserves_length (xs: list int)
-  : Lemma (ensures length xs == length (sort xs))
-          (decreases (length xs))
-  = match xs with
-    | [] -> ()
-    | [_] -> ()
-    | _ -> 
-      let xEven, xOdd = split xs in
-      split_length_smaller_lemma xs xEven xOdd;
-      merge_length_lemma (sort xEven) (sort xOdd);
-      split_length_lemma xs xEven xOdd;
-      sort_preserves_length xEven;
-      sort_preserves_length xOdd
-
 let rec sort_count_lemma (e: int) (xs: list int)
   : Lemma (ensures count e xs == count e (sort xs))
           (decreases length xs)
@@ -157,10 +143,9 @@ let rec sort_count_lemma (e: int) (xs: list int)
     | [] -> ()
     | [_] -> ()
     | _ -> 
-      let xEven, xOdd = split xs in
+      let (xEven, xOdd) = split xs in
       merge_count_lemma e (sort xEven) (sort xOdd);
       split_length_smaller_lemma xs xEven xOdd;
-      sort_preserves_length xEven;
-      sort_preserves_length xOdd;
-      sort_count_lemma e (sort xEven);
-      sort_count_lemma e (sort xOdd)
+      sort_count_lemma e xEven;
+      sort_count_lemma e xOdd;
+      split_count_lemma e xs xEven xOdd
