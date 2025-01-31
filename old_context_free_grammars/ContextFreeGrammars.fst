@@ -10,24 +10,6 @@ let rec for_all (#a: Type) (f: a -> bool) (xs: list a)
     | [] -> true
     | x :: xs' -> f x && for_all f xs'
 
-// let rec contains (#a: eqtype) (x: a) (xs: list a)
-//   : Tot (bool) (decreases xs)
-//   = match xs with
-//     | [] -> false 
-//     | x' :: xs' -> x = x' || contains x xs'
-
-// let rec length (#a: Type) (xs: list a)
-//   : Tot (nat) (decreases xs)
-//   = match xs with
-//     | [] -> 0 
-//     | _ :: xs' -> 1 + length xs'
-
-// let rec append (#a: Type) (xs: list a) (ys: list a)
-//   : Tot (list a) (decreases xs)
-//   = match xs with
-//     | [] -> ys
-//     | x :: xs' -> x :: append xs' ys
-
 let rec foldBack (#a #b: Type) (f: b -> a -> a) (ls: list b) (acc: a)
   : a
   = match ls with
@@ -92,18 +74,28 @@ let a_CFG_is_sound_lemma _
   = normalize_term_spec (sound_CFG a_CFG)
 
 // construction for (a)
+val handle_one_production_a_foldBack: rhs_type -> int -> Tot (rhs_type * list production_type * int)
+let rec handle_one_production_a_foldBack (rhs: rhs_type) (count: int)
+  : Tot (rhs_type * list production_type * int) (decreases rhs)
+  = match rhs with
+    | [] -> [], [], count
+    | V v :: rhs' -> 
+      let (updated_rhs, new_productions, count') = 
+        handle_one_production_a_foldBack rhs' count in
+      V v :: updated_rhs, new_productions, count'
+    | T t :: rhs' -> 
+      let newVar = Var ("Z" ^ Prims.string_of_int count) in
+      let (updated_rhs, new_productions, count') = 
+        handle_one_production_a_foldBack rhs' (count + 1) in
+      V newVar :: updated_rhs, (newVar, [T t]) :: new_productions, count'
+
+val handle_one_production_a: production_type -> int -> list production_type * int
 let handle_one_production_a ((var, rhs): production_type) (count: int)
-  : list (variable_type * rhs_type) * int
+  : list production_type * int
   = if List.length rhs >= 2 then 
-      let (res', count', new_productions) = foldBack (
-        fun p (acc, c, prods) -> 
-          match p with
-          | V v -> V v :: acc, c, prods
-          | T t -> 
-            let newVar = Var ("Z" ^ Prims.string_of_int c) in
-            V newVar :: acc, c + 1, (newVar, [T t]) :: prods
-      ) rhs ([], count, []) in
-      (var, res') :: new_productions, count'
+      let (updated_rhs, new_productions, count') = 
+        handle_one_production_a_foldBack rhs count in
+      (var, updated_rhs) :: new_productions, count'
     else [(var, rhs)], count
 
 let handle_one_production_a_test_lemma _
@@ -113,11 +105,13 @@ let handle_one_production_a_test_lemma _
     )
   = normalize_term_spec (handle_one_production_a (Var "A", [V (Var "A"); T (Term "+"); V (Var "A")]) 0)
 
-let rec handle_all_productions_a productions count = 
-  match productions with
+let rec handle_all_productions_a (productions: list production_type) (count: int)
+  : Tot (list production_type * int) (decreases productions)
+  = match productions with
   | [] -> [], count
   | (var, rhs) :: productions' -> 
-    let (new_productions, count') = handle_one_production_a (var, rhs) count in 
+    let (new_productions, count') = 
+      handle_one_production_a (var, rhs) count in 
     let (res, count'') = handle_all_productions_a productions' count' in
     List.append new_productions res, count''
 
@@ -131,8 +125,11 @@ let handle_all_productions_a_test_lemma _
 // Does *not* return a vaild CFG at the moment
 let construction_a (cfg: cfg_type) 
     : cfg_type 
-    = let (new_productions, _) = handle_all_productions_a cfg.productions 0 in 
-      { cfg with productions = new_productions }
+    = 
+      let (new_productions, _) = handle_all_productions_a cfg.productions 0 in 
+      let cfg' = { cfg with productions = new_productions } in
+      let updated_variables = map (fun (var, _) -> var) cfg'.productions in
+      { cfg' with variables = updated_variables }
 
 // Construction for (b)
 // fix the syntax here
@@ -183,7 +180,7 @@ let entire_construction (cfg: cfg_type)
     { cfg' with variables = updated_variables }
 
 let (a_CFG_CNF: cfg_type) = {
-  variables = [Var "A"; Var "A"; Var "C0"; Var "Z0"];
+  variables = [Var "A"; Var "A"; Var "C0"; Var "Z0"]; // Temporary testing
   terminals = [Term "a"; Term "+"];
   productions =
     [(Var "A", [T (Term "a")]); (Var "A", [V (Var "A"); V (Var "C0")]);
@@ -191,7 +188,7 @@ let (a_CFG_CNF: cfg_type) = {
   start = Var "A"
 }
 
-let entire_construction_lemma _ 
+let entire_construction_test_lemma _ 
   : Lemma (a_CFG_CNF == entire_construction a_CFG)
   = normalize_term_spec (entire_construction a_CFG)
 
@@ -268,11 +265,30 @@ let aPaPa_in_a_CFG_lemma _
   : Lemma (ast_in_cfg aPaPa a_CFG == true)
   = normalize_term_spec (ast_in_cfg aPaPa a_CFG)
 
-// Properties
-let no_eps_symbol (cfg: cfg_type)
-  : bool 
-  = not (contains (Term "") cfg.terminals)
+// Word in CNF to word in orginal
+let rec get_vars_from_productions (productions: list production_type)
+    : Tot (list variable_type) (decreases productions)
+    = match productions with
+      | [] -> []
+      | (var, _) :: productions' -> var :: get_vars_from_productions productions'
 
-let a _ 
-  : Lemma (no_eps_symbol a_CFG == true)
-  = normalize_term_spec (no_eps_symbol a_CFG)
+let rec convert_AST_CNF_to_AST (ast_CNF: ast_type) (cfg: cfg_type) 
+  : Tot (list ast_type) (decreases ast_CNF)
+  = match ast_CNF with 
+    | Node (var, ast_CNF_list) -> 
+        if List.contains var (get_vars_from_productions cfg.productions) then 
+            [Node (var, convert_AST_CNF_to_AST_list ast_CNF_list cfg)]
+        else
+            convert_AST_CNF_to_AST_list ast_CNF_list cfg
+    | T' t -> [T' t]
+and convert_AST_CNF_to_AST_list (ast_CNF_list: list ast_type) (cfg: cfg_type)
+  : Tot (list ast_type) (decreases ast_CNF_list)
+  = match ast_CNF_list with
+    | [] -> []
+    | ast :: ast_CNF_list' -> 
+        List.append (convert_AST_CNF_to_AST ast cfg) (convert_AST_CNF_to_AST_list ast_CNF_list' cfg)
+
+let aPaPa' = Cons?.hd (convert_AST_CNF_to_AST aPaPa_CNF a_CFG)
+let convert_CNF_to_original_test_lemma _ 
+  : Lemma (ensures aPaPa == aPaPa')
+  = normalize_term_spec (Cons?.hd (convert_AST_CNF_to_AST aPaPa_CNF a_CFG))

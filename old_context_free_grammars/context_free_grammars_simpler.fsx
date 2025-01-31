@@ -120,6 +120,19 @@ let entire_construction (cfg: CFG) =
     let updated_variables = List.map (fun (var, _) -> var) cfg'.productions
     { cfg' with variables = updated_variables }
 
+let bigger_CFG = {
+    variables = [Var "A"; Var "B"];
+    terminals = [Term "a"; Term "b"; Term "c"];
+    productions = [
+        (Var "A", [T (Term "a")]);
+        (Var "A", [V (Var "A"); T (Term "+"); V (Var "B")]);
+        (Var "B", [T (Term "b")]);
+        (Var "B", [V (Var "B"); V (Var "A"); T (Term "a")])
+    ]
+    start = Var "A"
+}
+let bigger_CFG_CNF = entire_construction bigger_CFG
+
 // Abstract syntax tree
 type AST = 
     | Node of Variable * AST list
@@ -191,3 +204,99 @@ and AST_in_CFG_list (ast_list: AST list) (cfg: CFG): bool =
     | ast :: ast_list' -> AST_in_CFG ast cfg && AST_in_CFG_list ast_list' cfg
 
 // AST_in_CFG aPaPa A_CFG
+
+let rec get_vars_from_productions (productions: Production list) = 
+    match productions with
+    | [] -> []
+    | (var, _) :: productions' -> var :: get_vars_from_productions productions'
+
+let rec convert_AST_CNF_to_AST (ast_CNF: AST) (cfg: CFG) = 
+    match ast_CNF with 
+    | Node (var, ast_CNF_list) -> 
+        if List.contains var cfg.variables then 
+            [Node (var, convert_AST_CNF_to_AST_list ast_CNF_list cfg)]
+        else
+            convert_AST_CNF_to_AST_list ast_CNF_list cfg
+    | T' t -> [T' t]
+and convert_AST_CNF_to_AST_list (ast_CNF_list: AST list) (cfg: CFG) = 
+    match ast_CNF_list with
+    | [] -> []
+    | ast :: ast_CNF_list' -> 
+        convert_AST_CNF_to_AST ast cfg @ convert_AST_CNF_to_AST_list ast_CNF_list' cfg
+
+// let aPaPa' = List.head (convert_AST_CNF_to_AST aPaPa_CNF A_CFG)
+
+let A_CFG_other = {
+    variables = [Var "A"];
+    terminals = [Term "a"; Term "+"];
+    productions = [
+        (Var "A", [T (Term "a")]);
+        (Var "A", [T (Term "a"); T (Term "+"); V (Var "A")])
+    ];
+    start = Var "A"
+}
+
+let A_CFG_other_CNF = entire_construction A_CFG_other
+
+let aPaPa_other = 
+    Node (Var "A", [
+        T' (Term "a");
+        T' (Term "+");
+        Node (Var "A", [
+            T' (Term "a");
+            T' (Term "+");
+            Node (Var "A", [T' (Term "a")])
+        ])
+    ])
+
+let aPaPa_other_CNF = 
+    Node (Var "A", [
+        Node (Var "Z1", [T' (Term "a")]);
+        Node (Var "C0", [
+            Node (Var "Z0", [T' (Term "+")]);
+            Node (Var "A", [
+                Node (Var "Z1", [T' (Term "a")]);
+                Node (Var "C0", [
+                    Node (Var "Z0", [T' (Term "+")]);
+                    Node (Var "A", [T' (Term "a")])
+                ])
+            ])
+        ])
+    ])
+
+let rec length_word_derivation (ast: AST) =
+    match ast with 
+    | Node (_, []) -> 1
+    | Node (_, ast' :: ast_list) -> 1 + max (length_word_derivation ast') (length_word_derivation_list ast_list)
+    | T' _ -> 1
+and length_word_derivation_list (ast_list: AST list) = 
+    match ast_list with
+    | [] -> 0
+    | ast :: ast_list' -> max (length_word_derivation ast) (length_word_derivation_list ast_list')
+
+// To be continued if time permits it
+// Idea: variable names does not matter; only structure and terminals (both value and position)
+let rec same_structure (ast: AST) (ast_CNF: AST): bool = 
+    match ast, ast_CNF with
+    | Node (_, ast_list), Node (_, ast_CNF_list) -> same_structure_list ast_list ast_CNF_list
+    | T' t1, T' t2 -> t1 = t2
+    | _, _ -> false
+and same_structure_list (ast_list: AST list) (ast_CNF_list: AST list): bool = 
+    match ast_list, ast_CNF_list with
+    | [], [] -> true
+    | ast :: ast_list', ast_CNF :: ast_CNF_list' -> same_structure ast ast_CNF && same_structure_list ast_list' ast_CNF_list'
+    | _, _ -> false
+
+let tree1 = 
+    Node (Var "A", [T' (Term "a")])
+let tree2 = 
+    Node (Var "B", [T' (Term "a")])
+same_structure tree1 tree2
+
+let rec convert_AST_to_AST_CNF (ast: AST) = 
+    match ast with
+    | T' t -> T' t
+    | Node (Var s, T' t :: ast') -> 
+and convert_AST_to_AST_CNF_list (ast_list: AST list) = 
+    match ast_list with 
+    | [] -> []

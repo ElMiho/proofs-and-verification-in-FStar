@@ -1,9 +1,8 @@
 module MergeSort
 
 // Helper
-// ??? Find a way to make this nicer with imports
 let rec length (xs: list int)
-  : Tot nat (decreases xs) // Important later with Tot and decreases
+  : Tot nat (decreases xs) 
   = match xs with
     | [] -> 0
     | _ :: xs' -> 1 + length xs'

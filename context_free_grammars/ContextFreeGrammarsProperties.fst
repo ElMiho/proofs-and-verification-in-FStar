@@ -1,2 +1,0 @@
-module ContextFreeGrammarsProperties
-open ContextFreeGrammars

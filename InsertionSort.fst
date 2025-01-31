@@ -1,7 +1,7 @@
 module InsertionSort
 
 let rec length (xs: list int)
-  : Tot nat (decreases xs) // Important later with Tot and decreases
+  : Tot nat (decreases xs) 
   = match xs with
     | [] -> 0
     | _ :: xs' -> 1 + length xs'
@@ -21,9 +21,6 @@ let rec insert (x: int) (xs: list int)
       if x <= x' then x :: x' :: xs'
       else x' :: insert x xs'
 
-val insert_preserves_order (x: int) (xs: list int) 
-  : Lemma (requires ordered xs)
-          (ensures ordered (insert x xs))
 let rec insert_preserves_order (x: int) (xs: list int)
   : Lemma (requires ordered xs)
           (ensures ordered (insert x xs))
@@ -37,8 +34,6 @@ let rec sort (xs: list int)
     | [] -> []
     | x :: xs' -> insert x (sort xs')
 
-val sort_ensures_ordered (xs: list int)
-  : Lemma (ensures ordered (sort xs))
 let rec sort_ensures_ordered (xs: list int)
   : Lemma (ensures ordered (sort xs))
   = match xs with
